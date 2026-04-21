@@ -70,6 +70,21 @@ struct RootDumpChunk {
 };
 
 constexpr std::size_t kBinarySampleSize = 4096;
+constexpr std::string_view kDefaultConfigContents =
+R"(; This file is loaded from the same directory as the compiled binary.
+
+[settings]
+filter_mode = blacklist
+working_directory = ../
+
+[blacklist]
+files = dump.md, .gitignore
+directories = .git, .vscode, .gradle, .idea, scripts, dist, test, build, gradle
+
+[whitelist]
+files = Makefile
+directories = src
+)";
 
 std::string trim_copy(std::string_view value) {
     std::size_t start = 0;
@@ -189,10 +204,37 @@ bool is_whitelist_section(const std::string& section) {
         section == "whitelist" || section == "whitelists";
 }
 
+void ensure_config_exists(const fs::path& config_path) {
+    std::error_code exists_error;
+    const bool config_exists = fs::exists(config_path, exists_error);
+    if (exists_error) {
+        throw std::runtime_error("Unable to check config.ini: " + config_path.string());
+    }
+
+    if (config_exists) {
+        return;
+    }
+
+    std::ofstream output(config_path, std::ios::binary | std::ios::trunc);
+    if (!output) {
+        throw std::runtime_error(
+            "Unable to create default config.ini next to the binary: " + config_path.string()
+        );
+    }
+
+    output << kDefaultConfigContents;
+    output.flush();
+    if (!output) {
+        throw std::runtime_error("Failed while writing default config.ini: " + config_path.string());
+    }
+}
+
 Config load_config(const fs::path& config_path, const fs::path& executable_dir) {
+    ensure_config_exists(config_path);
+
     std::ifstream input(config_path);
     if (!input) {
-        throw std::runtime_error("Missing config.ini next to the binary: " + config_path.string());
+        throw std::runtime_error("Unable to open config.ini next to the binary: " + config_path.string());
     }
 
     Config config;
